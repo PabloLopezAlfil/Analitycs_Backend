@@ -1,0 +1,104 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+/// Usuarios de la aplicación.
+/// Se mapea a la tabla `users` (ver documentación 0001).
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  created_at   DateTime @default(now())
+
+  @@map("users")
+}
+
+/// Cada subida realizada por el usuario (ver documentación 0002).
+model Upload {
+  id            Int            @id @default(autoincrement())
+  type          String // HTML | ZIP_SINGLE | ZIP_MULTIPLE
+  originalName  String         @map("original_name")
+  created_at    DateTime       @default(now())
+  htmlDocuments HtmlDocument[]
+
+  @@map("uploads")
+}
+
+/// Cada HTML procesado (un email). Un upload puede tener uno o varios.
+model HtmlDocument {
+  id           Int        @id @default(autoincrement())
+  uploadId     Int        @map("upload_id")
+  name         String
+  content      String     @db.LongText
+  relativePath String?    @map("relative_path")
+  created_at   DateTime   @default(now())
+  upload       Upload     @relation(fields: [uploadId], references: [id], onDelete: Cascade)
+  images       Image[]
+  analyses     Analysis[]
+
+  @@map("html_documents")
+}
+
+/// Cada imagen referenciada por un html_document.
+model Image {
+  id           Int          @id @default(autoincrement())
+  htmlId       Int          @map("html_id")
+  originalName String       @map("original_name")
+  url          String       @db.Text
+  relativePath String?      @map("relative_path")
+  mimeType     String?      @map("mime_type")
+  isAccesible  Boolean      @map("is_accesible")
+  created_at   DateTime     @default(now())
+  htmlDocument HtmlDocument @relation(fields: [htmlId], references: [id], onDelete: Cascade)
+
+  @@map("images")
+}
+
+/// Cada ejecución de análisis sobre un documento (ver documentación 0004).
+/// Histórico: cada análisis se guarda como registro independiente.
+model Analysis {
+  id           Int             @id @default(autoincrement())
+  htmlId       Int             @map("html_id")
+  score        Int? // 0-100; null si ninguna regla fue puntuable
+  created_at   DateTime        @default(now())
+  htmlDocument HtmlDocument    @relation(fields: [htmlId], references: [id], onDelete: Cascade)
+  checks       AnalysisCheck[]
+
+  @@map("analyses")
+}
+
+/// Resultado de cada regla evaluada en un análisis (incluidas las OK).
+model AnalysisCheck {
+  id         Int               @id @default(autoincrement())
+  analysisId Int               @map("analysis_id")
+  rule       String // código estable, p. ej. IMG_NO_ALT
+  category   String // STRUCTURE | IMAGES | TYPOGRAPHY | COLOR_CONTRAST | LINKS_BUTTONS | RESPONSIVE_CSS
+  status     String // OK | ERROR | AVISO | VALIDADO_IA | REVISION_PENDIENTE
+  message    String
+  analysis   Analysis          @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+  findings   AnalysisFinding[]
+
+  @@map("analysis_checks")
+}
+
+/// Ocurrencias concretas de los checks que no resultan OK.
+model AnalysisFinding {
+  id       Int           @id @default(autoincrement())
+  checkId  Int           @map("check_id")
+  location String
+  evidence String        @db.Text
+  check    AnalysisCheck @relation(fields: [checkId], references: [id], onDelete: Cascade)
+
+  @@map("analysis_findings")
+}
