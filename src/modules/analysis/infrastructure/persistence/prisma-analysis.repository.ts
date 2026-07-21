@@ -60,9 +60,11 @@ export class PrismaAnalysisRepository implements AnalysisRepository {
   }
 
   async findAll(filter?: AnalysisFilter): Promise<AnalysisSummaryInterface[]> {
+    const take = filter?.limit !== undefined && filter.limit > 0 ? filter.limit : undefined;
     const rows = await this.prisma.analysis.findMany({
       where: filter?.htmlId !== undefined ? { htmlId: filter.htmlId } : {},
       orderBy: { created_at: 'desc' },
+      ...(take !== undefined ? { take } : {}),
     });
     return rows.map((row) => ({
       id: row.id,

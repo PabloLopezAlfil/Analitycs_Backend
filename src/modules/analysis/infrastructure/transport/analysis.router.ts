@@ -24,7 +24,11 @@ export function AnalysisRouter({
     try {
       // Filtro opcional ?html_id=:id; se ignora si no es un entero.
       const htmlId = Number(req.query.html_id);
-      const filter = Number.isInteger(htmlId) ? { htmlId } : undefined;
+      const limit = Number(req.query.limit);
+      const filter = {
+        ...(Number.isInteger(htmlId) ? { htmlId } : {}),
+        ...(Number.isInteger(limit) && limit > 0 ? { limit } : {}),
+      };
       const analyses = await listAnalyses.execute(filter);
       res.status(200).json(analyses);
     } catch {

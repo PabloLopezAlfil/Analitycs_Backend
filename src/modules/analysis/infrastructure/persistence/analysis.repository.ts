@@ -14,6 +14,7 @@ export interface SaveAnalysisInput {
 /** Filtro opcional del listado de análisis. */
 export interface AnalysisFilter {
   htmlId?: number;
+  limit?: number;
 }
 
 /**
