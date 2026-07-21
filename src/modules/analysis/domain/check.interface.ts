@@ -49,3 +49,11 @@ export interface AnalysisInterface {
   createdAt: string;
   checks: AnalysisCheckInterface[];
 }
+
+/** Resumen de un análisis para el listado (sin los checks; ver documentación 0004 §8). */
+export interface AnalysisSummaryInterface {
+  id: number;
+  htmlId: number;
+  score: number | null;
+  createdAt: string;
+}

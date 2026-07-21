@@ -3,15 +3,17 @@ import jwt from 'jsonwebtoken';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // --- Dobles de persistencia (hoisted para poder referenciarlos en vi.mock) ---
-const { findUnique, create } = vi.hoisted(() => ({
+const { findUnique, create, findManyAnalyses, findUniqueAnalysis } = vi.hoisted(() => ({
   findUnique: vi.fn(),
   create: vi.fn(),
+  findManyAnalyses: vi.fn(),
+  findUniqueAnalysis: vi.fn(),
 }));
 
 vi.mock('@db/prisma', () => ({
   getPrisma: () => ({
     htmlDocument: { findUnique },
-    analysis: { create },
+    analysis: { create, findMany: findManyAnalyses, findUnique: findUniqueAnalysis },
     user: { findUnique: vi.fn() },
   }),
 }));
@@ -86,6 +88,37 @@ const dirtyDoc = {
   ],
 };
 
+const detailedAnalysis = {
+  id: 7,
+  htmlId: HTML_ID,
+  score: 92,
+  created_at: new Date('2026-01-10T12:00:00.000Z'),
+  checks: [
+    {
+      id: 1,
+      rule: 'IMG_NO_ALT',
+      category: 'IMAGES',
+      status: 'ERROR',
+      message: 'Hay imágenes sin texto alternativo.',
+      findings: [
+        {
+          id: 101,
+          location: 'body > img[1]',
+          evidence: '<img src="images/foo.jpg">',
+        },
+      ],
+    },
+    {
+      id: 2,
+      rule: 'TYP_EXCESS_CAPS',
+      category: 'TYPOGRAPHY',
+      status: 'OK',
+      message: 'No se detectan bloqueos de texto en mayúsculas.',
+      findings: [],
+    },
+  ],
+};
+
 // Simula el nested create de Prisma reconstruyendo el agregado a partir de los
 // datos, para que la respuesta refleje lo que el endpoint decide persistir.
 const echoCreate = async ({ data }: any) => ({
@@ -116,6 +149,10 @@ beforeEach(() => {
   findUnique.mockResolvedValue(null);
   create.mockReset();
   create.mockImplementation(echoCreate);
+  findManyAnalyses.mockReset();
+  findManyAnalyses.mockResolvedValue([]);
+  findUniqueAnalysis.mockReset();
+  findUniqueAnalysis.mockResolvedValue(null);
 });
 
 describe('POST /analysis', () => {
@@ -231,6 +268,111 @@ describe('POST /analysis', () => {
       const res = await postAnalysis({ htmlId: HTML_ID });
 
       expect(res.body.score).toBe(92);
+    });
+  });
+});
+
+describe('GET /analysis', () => {
+  it('requiere token (401 sin autenticación)', async () => {
+    const res = await request(app).get('/analysis');
+
+    expect(res.status).toBe(401);
+    expect(findManyAnalyses).not.toHaveBeenCalled();
+  });
+
+  it('devuelve 200 con la lista (resumen) de análisis', async () => {
+    findManyAnalyses.mockResolvedValue([
+      { id: 1, htmlId: 12, score: 92, created_at: new Date('2026-01-01T00:00:00.000Z') },
+      { id: 2, htmlId: 15, score: 60, created_at: new Date('2026-01-02T00:00:00.000Z') },
+    ]);
+
+    const res = await request(app).get('/analysis').set('Authorization', authHeader);
+
+    expect(res.status).toBe(200);
+    expect(res.type).toMatch(/json/);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body).toHaveLength(2);
+
+    const [first] = res.body;
+    expect(first.id).toBe(1);
+    expect(first.htmlId).toBe(12);
+    expect(first.score).toBe(92);
+    expect(first.createdAt).toBeDefined();
+
+    // Resumen: NO incluye los checks (viven en el detalle GET /analysis/:id).
+    expect(first).not.toHaveProperty('checks');
+  });
+
+  it('devuelve un array vacío si no hay análisis', async () => {
+    findManyAnalyses.mockResolvedValue([]);
+
+    const res = await request(app).get('/analysis').set('Authorization', authHeader);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it('filtra por documento con ?html_id', async () => {
+    findManyAnalyses.mockResolvedValue([
+      { id: 1, htmlId: 12, score: 92, created_at: new Date('2026-01-01T00:00:00.000Z') },
+    ]);
+
+    const res = await request(app).get('/analysis?html_id=12').set('Authorization', authHeader);
+
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(findManyAnalyses).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { htmlId: 12 } }),
+    );
+  });
+});
+
+describe('GET /analysis/:id', () => {
+  it('requiere token (401 sin autenticación)', async () => {
+    const res = await request(app).get('/analysis/7');
+
+    expect(res.status).toBe(401);
+    expect(findUniqueAnalysis).not.toHaveBeenCalled();
+  });
+
+  it('devuelve 404 si el id no es numérico (sin consultar la BD)', async () => {
+    const res = await request(app).get('/analysis/abc').set('Authorization', authHeader);
+
+    expect(res.status).toBe(404);
+    expect(findUniqueAnalysis).not.toHaveBeenCalled();
+  });
+
+  it('devuelve 404 si el análisis no existe', async () => {
+    findUniqueAnalysis.mockResolvedValue(null);
+
+    const res = await request(app).get('/analysis/999').set('Authorization', authHeader);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBeDefined();
+  });
+
+  it('devuelve el análisis con score y checks + findings', async () => {
+    findUniqueAnalysis.mockResolvedValue(detailedAnalysis);
+
+    const res = await request(app).get('/analysis/7').set('Authorization', authHeader);
+
+    expect(res.status).toBe(200);
+    expect(res.type).toMatch(/json/);
+    expect(res.body.id).toBe(detailedAnalysis.id);
+    expect(res.body.htmlId).toBe(HTML_ID);
+    expect(res.body.score).toBe(92);
+    expect(res.body.createdAt).toEqual(detailedAnalysis.created_at.toISOString());
+    expect(Array.isArray(res.body.checks)).toBe(true);
+    expect(res.body.checks).toHaveLength(2);
+
+    const imgCheck = res.body.checks.find((c: any) => c.rule === 'IMG_NO_ALT');
+    expect(imgCheck).toBeDefined();
+    expect(imgCheck.status).toBe('ERROR');
+    expect(imgCheck.findings).toHaveLength(1);
+    expect(imgCheck.findings[0]).toMatchObject({
+      id: 101,
+      location: 'body > img[1]',
+      evidence: '<img src="images/foo.jpg">',
     });
   });
 });

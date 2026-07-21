@@ -148,6 +148,29 @@ describe('POST /uploads — ZIP_SINGLE', () => {
     expect(remote.relativePath).toBeNull();
   });
 
+  it('ignora el ruido de macOS (__MACOSX/._*) y no genera documentos fantasma', async () => {
+    const zip = new AdmZip();
+    zip.addFile('email/index.html', Buffer.from(HTML_ZIP_SINGLE));
+    zip.addFile('email/images/banner.jpg', JPEG_BYTES);
+    // Basura que macOS mete al comprimir una carpeta.
+    zip.addFile('__MACOSX/email/._index.html', Buffer.from([0x00, 0x05, 0x16, 0x07]));
+    zip.addFile('__MACOSX/email/images/._banner.jpg', Buffer.from([0x00, 0x05, 0x16, 0x07]));
+    zip.addFile('email/.DS_Store', Buffer.from([0x00, 0x00, 0x00, 0x01]));
+
+    const res = await request(app)
+      .post('/uploads')
+      .set('Authorization', authHeader)
+      .attach('file', zip.toBuffer(), {
+        filename: 'correo.zip',
+        contentType: 'application/zip',
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.type).toBe('ZIP_SINGLE');
+    expect(res.body.htmlDocuments).toHaveLength(1);
+    expect(res.body.htmlDocuments[0].relativePath).toBe('email');
+  });
+
   it('marca is_accesible=false si la imagen pública no responde', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => fakeFetchResponse(false)));
 

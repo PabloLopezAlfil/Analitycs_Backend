@@ -9,6 +9,8 @@ import { TypographyAnalyzer } from './domain/analyzers/typography.analyzer.js';
 import { ColorContrastAnalyzer } from './domain/analyzers/color-contrast.analyzer.js';
 import { ResponsiveCssAnalyzer } from './domain/analyzers/responsive-css.analyzer.js';
 import { AnalyzeHtmlDocumentUseCase } from './domain/analyze-html-document.use-case.js';
+import { GetAnalysisUseCase } from './domain/get-analysis.use-case.js';
+import { ListAnalysesUseCase } from './domain/list-analyses.use-case.js';
 import { AnalysisRouter } from './infrastructure/transport/analysis.router.js';
 
 /**
@@ -29,6 +31,8 @@ export function buildAnalysisRouter(): Router {
   ];
 
   const analyzeHtmlDocument = new AnalyzeHtmlDocumentUseCase(documents, analyses, analyzers);
+  const listAnalyses = new ListAnalysesUseCase(analyses);
+  const getAnalysis = new GetAnalysisUseCase(analyses);
 
-  return AnalysisRouter({ analyzeHtmlDocument });
+  return AnalysisRouter({ analyzeHtmlDocument, listAnalyses, getAnalysis });
 }
