@@ -31,6 +31,11 @@ export interface AnalysisFindingInterface {
   id: number;
   location: string;
   evidence: string;
+  // Veredicto de la validación por IA (docs 0005 §7); null hasta revisar.
+  aiStatus: string | null;
+  aiConfidence: string | null;
+  aiProblem: string | null;
+  aiRecommendation: string | null;
 }
 
 export interface AnalysisCheckInterface {

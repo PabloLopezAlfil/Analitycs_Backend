@@ -1,4 +1,4 @@
-import type { CheckInput, CheckStatus } from './check.interface.js';
+import type { CheckStatus } from './check.interface.js';
 
 // Puntos por estado (documentación 0004 §4). REVISION_PENDIENTE no aparece:
 // queda fuera del cálculo (ni suma ni penaliza).
@@ -11,9 +11,11 @@ const POINTS: Partial<Record<CheckStatus, number>> = {
 
 /**
  * Score 0–100 del análisis: porcentaje de puntos sobre las reglas puntuables.
- * Devuelve null si ninguna regla es puntuable.
+ * Devuelve null si ninguna regla es puntuable. Acepta cualquier check con
+ * `status` (checks recién evaluados o checks ya persistidos tras una
+ * revisión por IA, docs 0005 §7).
  */
-export function computeScore(checks: CheckInput[]): number | null {
+export function computeScore(checks: { status: CheckStatus }[]): number | null {
   const scorable = checks.filter((check) => POINTS[check.status] !== undefined);
   if (scorable.length === 0) {
     return null;

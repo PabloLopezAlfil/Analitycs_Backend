@@ -160,11 +160,76 @@ altas). Análisis realizado en su momento:
 
 ---
 
-## 7. Resumen de próximos pasos
+## 7. Endpoint `POST /analysis/:id/ai`
 
-- [ ] Instalar y configurar Genkit (proveedores OpenAI e Ollama).
-- [ ] Definir el puerto de validación por IA en el módulo `analysis` y su adaptador Genkit.
-- [ ] Definir los schemas de entrada/salida estructurada (verdict, confidence, reason) y el umbral de confianza.
-- [ ] Implementar los flows por caso de uso (empezando por imágenes: texto en imagen, alt correcto, decorativa/informativa).
-- [ ] Conectar los flows con las reglas correspondientes (`IMG_TEXT_IN_IMAGE`, `COL_ONLY_COLOR_INFO`, …).
-- [ ] Tests (TDD): flows mockeados en los tests del módulo; la IA real nunca se invoca en la suite.
+Conecta los flows de la sección 5 con el catálogo de reglas (0004 §7): revisa
+por IA los checks candidatos de un **análisis ya existente** (creado antes con
+`POST /analysis`) y **actualiza ese mismo registro** (no crea un análisis
+nuevo). Va protegido por `requireAuth`, igual que el resto de `/analysis`.
+
+### Reglas conectadas (mapeo regla → flow → puerto)
+
+| Regla (0004 §7) | Flow (§5) | Método del puerto `AiReviewer` |
+|------------------|-----------|---------------------------------|
+| `IMG_TEXT_IN_IMAGE` | `imageContainsTextFlow` | `reviewContainsText` |
+| `IMG_GENERIC_ALT` / `IMG_LINKED_NO_ALT` | `imageAltReviewFlow` | `reviewAltText` |
+| `IMG_EMPTY_ALT_SUSPECT` | `imageDecorativeFlow` | `reviewDecorative` |
+
+### Granularidad: por finding, no solo por check
+
+Un `check` agrupa varias imágenes (`findings`); la IA evalúa **cada imagen por
+separado** (entrada mínima: la imagen + su `alt`/contexto inmediato, nunca el
+HTML completo). El veredicto de cada finding se persiste en
+`analysis_findings` (columnas nuevas, ver abajo) y el estado del `check` se
+recalcula agregando los veredictos de sus findings:
+
+- Si **alguna** imagen resulta `INCUMPLE` → el check pasa al estado de fallo
+  de su regla (el mismo que usaría el analizador estático si pudiera
+  resolverlo solo): `IMG_TEXT_IN_IMAGE` y `IMG_LINKED_NO_ALT` → `ERROR`;
+  `IMG_GENERIC_ALT` y `IMG_EMPTY_ALT_SUSPECT` → `AVISO`.
+- Si **todas** las imágenes resultan `VALIDADO_IA` → el check pasa a
+  `VALIDADO_IA`.
+- Si queda alguna en `REVISION_PENDIENTE` (confianza insuficiente o fallo
+  técnico) y ninguna es `INCUMPLE` → el check permanece `REVISION_PENDIENTE`.
+
+Tras actualizar los checks afectados se recalcula el `score` del análisis
+(misma fórmula de 0004 §4) y se persiste junto con los checks y findings.
+
+Un finding que ya tiene un veredicto de IA guardado **no se vuelve a enviar al
+modelo** en llamadas posteriores al endpoint: es acumulativo/idempotente y
+evita coste/latencia innecesarios (principio de la sección 6).
+
+### Cambio de esquema: `analysis_findings`
+
+Se añaden 4 columnas nullable para guardar el veredicto por imagen:
+
+| Columna | Tipo | Descripción |
+|---------|------|-------------|
+| `ai_status` | `VARCHAR`, nullable | `VALIDADO_IA` \| `INCUMPLE` \| `REVISION_PENDIENTE`, o `NULL` si aún no se ha revisado. |
+| `ai_confidence` | `VARCHAR`, nullable | `alta` \| `media` \| `baja`, o `NULL`. |
+| `ai_problem` | `TEXT`, nullable | Problema descrito por el modelo, o `NULL` si cumple/no revisado. |
+| `ai_recommendation` | `TEXT`, nullable | Recomendación breve del modelo, o `NULL` hasta revisar. |
+
+### Arquitectura
+
+- `domain/ai-reviewer.interface.ts`: puerto `AiReviewer` (un método por flow),
+  sin dependencia de Genkit — mantiene el dominio independiente del proveedor.
+- `domain/review-analysis-with-ai.use-case.ts`: orquestador — carga el
+  análisis y el documento, localiza la imagen de cada finding candidato,
+  invoca el puerto, agrega el resultado por check y persiste.
+- `infrastructure/ai/genkit-ai-reviewer.adapter.ts`: adaptador que implementa
+  el puerto llamando a los flows de `src/genkit/flows`, convirtiendo la imagen
+  local a data URL (`fileToDataUrl`) justo antes de la llamada — entrada
+  mínima, nunca el HTML completo (principio 2).
+
+---
+
+## 8. Resumen de próximos pasos
+
+- [x] Instalar y configurar Genkit (proveedores OpenAI e Ollama).
+- [x] Definir el puerto de validación por IA en el módulo `analysis` y su adaptador Genkit.
+- [x] Definir los schemas de entrada/salida estructurada (verdict, confidence, reason) y el umbral de confianza.
+- [x] Implementar los flows por caso de uso (empezando por imágenes: texto en imagen, alt correcto, decorativa/informativa).
+- [x] Conectar los flows con las reglas correspondientes (`IMG_TEXT_IN_IMAGE`, `IMG_GENERIC_ALT`, `IMG_LINKED_NO_ALT`, `IMG_EMPTY_ALT_SUSPECT`) vía `POST /analysis/:id/ai` (§7).
+- [x] Tests (TDD): flows mockeados en los tests del módulo; la IA real nunca se invoca en la suite.
+- [ ] Conectar `COL_ONLY_COLOR_INFO` / `COL_TEXT_OVER_IMAGE` (categoría color/contraste) cuando exista el analizador de color (0004 §11, incremento 4).

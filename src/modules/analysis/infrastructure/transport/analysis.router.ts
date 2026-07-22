@@ -2,12 +2,14 @@ import { Router } from 'express';
 import { AnalyzeHtmlDocumentUseCase } from '../../domain/analyze-html-document.use-case.js';
 import { GetAnalysisUseCase } from '../../domain/get-analysis.use-case.js';
 import { ListAnalysesUseCase } from '../../domain/list-analyses.use-case.js';
+import { ReviewAnalysisWithAiUseCase } from '../../domain/review-analysis-with-ai.use-case.js';
 import { NotFoundError, ValidationError } from '../../domain/errors.js';
 
 interface AnalysisRouterDeps {
   analyzeHtmlDocument: AnalyzeHtmlDocumentUseCase;
   listAnalyses: ListAnalysesUseCase;
   getAnalysis: GetAnalysisUseCase;
+  reviewAnalysisWithAi: ReviewAnalysisWithAiUseCase;
 }
 
 /**
@@ -17,12 +19,12 @@ export function AnalysisRouter({
   analyzeHtmlDocument,
   listAnalyses,
   getAnalysis,
+  reviewAnalysisWithAi,
 }: AnalysisRouterDeps): Router {
   const router = Router();
 
   router.get('/', async (req, res) => {
     try {
-      // Filtro opcional ?html_id=:id; se ignora si no es un entero.
       const htmlId = Number(req.query.html_id);
       const limit = Number(req.query.limit);
       const filter = {
@@ -45,6 +47,19 @@ export function AnalysisRouter({
         res.status(400).json({ error: error.message });
         return;
       }
+      if (error instanceof NotFoundError) {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+      res.status(500).json({ error: 'Error interno del servidor' });
+    }
+  });
+
+  router.post('/:id/ai', async (req, res) => {
+    try {
+      const analysis = await reviewAnalysisWithAi.execute(req.params.id);
+      res.status(200).json(analysis);
+    } catch (error) {
       if (error instanceof NotFoundError) {
         res.status(404).json({ error: error.message });
         return;

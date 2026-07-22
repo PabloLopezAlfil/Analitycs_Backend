@@ -94,11 +94,16 @@ model AnalysisCheck {
 
 /// Ocurrencias concretas de los checks que no resultan OK.
 model AnalysisFinding {
-  id       Int           @id @default(autoincrement())
-  checkId  Int           @map("check_id")
-  location String
-  evidence String        @db.Text
-  check    AnalysisCheck @relation(fields: [checkId], references: [id], onDelete: Cascade)
+  id               Int           @id @default(autoincrement())
+  checkId          Int           @map("check_id")
+  location         String
+  evidence         String        @db.Text
+  // Veredicto de la validación por IA (docs 0005 §7), NULL hasta revisar.
+  aiStatus         String?       @map("ai_status") // VALIDADO_IA | INCUMPLE | REVISION_PENDIENTE
+  aiConfidence     String?       @map("ai_confidence") // alta | media | baja
+  aiProblem        String?       @map("ai_problem") @db.Text
+  aiRecommendation String?       @map("ai_recommendation") @db.Text
+  check            AnalysisCheck @relation(fields: [checkId], references: [id], onDelete: Cascade)
 
   @@map("analysis_findings")
 }
