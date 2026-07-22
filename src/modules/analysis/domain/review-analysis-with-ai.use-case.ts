@@ -126,6 +126,18 @@ export class ReviewAnalysisWithAiUseCase {
       };
     }
 
+    // Imagen ya conocida como no accesible (rota, no encontrada; fase 0002): no
+    // se envía a la IA (no hay nada que analizar y evita una lectura/descarga inútil).
+    if (!image.isAccesible) {
+      return {
+        findingId: finding.id,
+        aiStatus: 'REVISION_PENDIENTE',
+        aiConfidence: null,
+        aiProblem: null,
+        aiRecommendation: 'La imagen no es accesible; revisar manualmente.',
+      };
+    }
+
     const input = { elemento: image.originalName, imagePath: image.url, mimeType: image.mimeType };
     const outcome =
       RULE_REVIEWER[rule] === 'altText'

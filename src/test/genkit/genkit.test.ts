@@ -7,7 +7,7 @@ import {
   buildAiResult,
   minConfidence,
 } from '../../genkit/schemas.js';
-import { fileToDataUrl } from '../../genkit/media.js';
+import { fileToDataUrl, imageToModelInput } from '../../genkit/media.js';
 
 // Nota (docs/0005): la IA real NUNCA se invoca en la suite. Aquí se testea la
 // lógica determinista de la integración: la construcción del resultado
@@ -135,5 +135,54 @@ describe('fileToDataUrl (entrada mínima para los flows)', () => {
     expect(dataUrl.startsWith('data:image/jpeg;base64,')).toBe(true);
     const base64 = dataUrl.slice('data:image/jpeg;base64,'.length);
     expect(Buffer.from(base64, 'base64')).toEqual(bytes);
+  });
+});
+
+// imageToModelInput prepara la imagen como entrada mínima del flow según su
+// origen: data URL y URL pública se pasan tal cual (la remota la descarga el
+// proveedor de IA, no el backend); la ruta local se lee y embebe en base64,
+// contenida en el directorio de almacenamiento (docs/0005 §2/§7).
+describe('imageToModelInput (prepara la imagen según su origen)', () => {
+  const originalUploadsDir = process.env.UPLOADS_DIR;
+
+  afterEach(() => {
+    if (originalUploadsDir === undefined) {
+      delete process.env.UPLOADS_DIR;
+    } else {
+      process.env.UPLOADS_DIR = originalUploadsDir;
+    }
+  });
+
+  it('devuelve tal cual una data URL ya embebida', async () => {
+    const dataUrl = 'data:image/png;base64,AAAA';
+
+    expect(await imageToModelInput(dataUrl, null)).toBe(dataUrl);
+  });
+
+  it('devuelve la URL pública tal cual (la descarga el proveedor, no el backend)', async () => {
+    const url = 'https://cdn.example.com/banner.jpg';
+
+    // No debe tocar la red: si intentara descargar, este fetch stubbeado lo delataría.
+    expect(await imageToModelInput(url, 'image/png')).toBe(url);
+  });
+
+  it('lee una ruta local contenida en el storage y la convierte a data URL', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'genkit-img-'));
+    process.env.UPLOADS_DIR = dir; // la contención permite rutas bajo el storage
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const path = join(dir, 'local.png');
+    await writeFile(path, bytes);
+
+    const dataUrl = await imageToModelInput(path, 'image/png');
+
+    expect(dataUrl).toBe(`data:image/png;base64,${bytes.toString('base64')}`);
+  });
+
+  it('rechaza una ruta local fuera del storage (path traversal)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'genkit-store-'));
+    process.env.UPLOADS_DIR = join(dir, 'storage');
+
+    await expect(imageToModelInput('../../../../etc/passwd', null)).rejects.toThrow();
+    await expect(imageToModelInput(join(dir, 'fuera.png'), null)).rejects.toThrow();
   });
 });

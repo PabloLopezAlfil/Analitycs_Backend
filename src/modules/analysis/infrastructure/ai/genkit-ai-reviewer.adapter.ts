@@ -2,7 +2,7 @@ import type { AiImageInput, AiReviewer, AiReviewOutcome } from '../../domain/ai-
 import { imageAltReviewFlow } from '../../../../genkit/flows/image-alt-review.flow.js';
 import { imageContainsTextFlow } from '../../../../genkit/flows/image-contains-text.flow.js';
 import { imageDecorativeFlow } from '../../../../genkit/flows/image-decorative.flow.js';
-import { fileToDataUrl } from '../../../../genkit/media.js';
+import { imageToModelInput } from '../../../../genkit/media.js';
 import type { AiResult } from '../../../../genkit/schemas.js';
 
 const FALLBACK: AiReviewOutcome = {
@@ -23,8 +23,10 @@ function toOutcome(result: AiResult): AiReviewOutcome {
 
 /**
  * Adaptador de infraestructura del puerto `AiReviewer` (docs 0005 §7): llama
- * al flow de Genkit correspondiente, convirtiendo la imagen local a data URL
- * justo antes de la llamada (entrada mínima, nunca el HTML completo).
+ * al flow de Genkit correspondiente pasándole la imagen como entrada mínima
+ * (nunca el HTML completo). Las imágenes públicas se envían por URL (las
+ * descarga el proveedor de IA) y las locales embebidas en base64; ver
+ * `imageToModelInput`.
  */
 export class GenkitAiReviewer implements AiReviewer {
   async reviewAltText(input: AiImageInput & { alt: string }): Promise<AiReviewOutcome> {
@@ -50,10 +52,13 @@ export class GenkitAiReviewer implements AiReviewer {
     call: (imageUrl: string) => Promise<AiResult>,
   ): Promise<AiReviewOutcome> {
     try {
-      const imageUrl = await fileToDataUrl(input.imagePath, input.mimeType ?? 'image/png');
+      const imageUrl = await imageToModelInput(input.imagePath, input.mimeType);
       const result = await call(imageUrl);
       return toOutcome(result);
-    } catch {
+    } catch (error) {
+      // La IA nunca bloquea el análisis (docs 0005 §4): ante cualquier fallo
+      // devuelve REVISION_PENDIENTE, pero se registra para poder diagnosticarlo.
+      console.error(`[ai-review] fallo revisando ${input.elemento} (${input.imagePath}):`, error);
       return FALLBACK;
     }
   }

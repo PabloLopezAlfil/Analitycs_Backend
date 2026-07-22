@@ -52,9 +52,13 @@ const ANALYSIS_ID = 7;
 let imagesDir: string;
 let texturaPath: string;
 let ofertaPath: string;
+const originalUploadsDir = process.env.UPLOADS_DIR;
 
 beforeAll(async () => {
   imagesDir = await mkdtemp(join(tmpdir(), 'analysis-ai-'));
+  // Los fixtures simulan imágenes locales (de un ZIP); la contención de ruta de
+  // imageToModelInput exige que estén bajo el directorio de almacenamiento.
+  process.env.UPLOADS_DIR = imagesDir;
   texturaPath = join(imagesDir, 'texto.jpg');
   ofertaPath = join(imagesDir, 'oferta.jpg');
   await writeFile(texturaPath, Buffer.from([0xff, 0xd8, 0xff, 0xe0]));
@@ -62,6 +66,11 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  if (originalUploadsDir === undefined) {
+    delete process.env.UPLOADS_DIR;
+  } else {
+    process.env.UPLOADS_DIR = originalUploadsDir;
+  }
   const { rm } = await import('node:fs/promises');
   await rm(imagesDir, { recursive: true, force: true });
 });
@@ -370,5 +379,101 @@ describe('POST /analysis/:id/ai', () => {
     expect(res.status).toBe(200);
     expect(imageContainsTextFlow).not.toHaveBeenCalled();
     expect(updateCheck).not.toHaveBeenCalled();
+  });
+
+  it('imagen pública (CDN): pasa la URL remota tal cual al flow (no la descarga el backend)', async () => {
+    const remoteUrl = 'https://cdn.example.com/promo.jpg';
+    findUniqueHtml.mockResolvedValue({
+      id: HTML_ID,
+      uploadId: 3,
+      name: 'index.html',
+      content: `<!doctype html><html><body><img src="${remoteUrl}" alt="banner"></body></html>`,
+      relativePath: null,
+      created_at: new Date('2026-01-01T00:00:00.000Z'),
+      images: [
+        {
+          id: 9,
+          htmlId: HTML_ID,
+          originalName: 'promo.jpg',
+          url: remoteUrl,
+          relativePath: null,
+          mimeType: 'image/jpeg',
+          isAccesible: true,
+          created_at: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ],
+    });
+    findUniqueAnalysis
+      .mockResolvedValueOnce(
+        pendingAnalysis([
+          checkRow({
+            id: 5,
+            rule: 'IMG_GENERIC_ALT',
+            status: 'AVISO',
+            findings: [findingRow({ id: 105, evidence: `<img src="${remoteUrl}" alt="banner">` })],
+          }),
+        ]),
+      )
+      .mockResolvedValueOnce(pendingAnalysis([]));
+    imageAltReviewFlow.mockResolvedValue({
+      criterio: 'imagen_alt',
+      estado: 'VALIDADO_IA',
+      confianza: 'alta',
+      elemento: 'promo.jpg',
+      problema: null,
+      recomendacion: 'Correcto.',
+      requiere_revision: false,
+    });
+
+    const res = await reviewAi();
+
+    expect(res.status).toBe(200);
+    // La URL pública se envía tal cual (la descarga el proveedor de IA), no en base64.
+    expect(imageAltReviewFlow).toHaveBeenCalledWith(
+      expect.objectContaining({ imageUrl: remoteUrl, elemento: 'promo.jpg', alt: 'banner' }),
+    );
+  });
+
+  it('imagen no accesible (rota): no llama a la IA y queda en REVISION_PENDIENTE', async () => {
+    findUniqueHtml.mockResolvedValue({
+      id: HTML_ID,
+      uploadId: 3,
+      name: 'index.html',
+      content: '<!doctype html><html><body><img src="images/rota.png"></body></html>',
+      relativePath: 'email',
+      created_at: new Date('2026-01-01T00:00:00.000Z'),
+      images: [
+        {
+          id: 8,
+          htmlId: HTML_ID,
+          originalName: 'rota.png',
+          url: 'images/rota.png',
+          relativePath: 'images/rota.png',
+          mimeType: 'image/png',
+          isAccesible: false,
+          created_at: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      ],
+    });
+    findUniqueAnalysis
+      .mockResolvedValueOnce(
+        pendingAnalysis([
+          checkRow({
+            findings: [findingRow({ id: 108, evidence: '<img src="images/rota.png">' })],
+          }),
+        ]),
+      )
+      .mockResolvedValueOnce(pendingAnalysis([checkRow({})]));
+
+    const res = await reviewAi();
+
+    expect(res.status).toBe(200);
+    expect(imageContainsTextFlow).not.toHaveBeenCalled();
+    expect(updateFinding).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 108 },
+        data: expect.objectContaining({ aiStatus: 'REVISION_PENDIENTE' }),
+      }),
+    );
   });
 });

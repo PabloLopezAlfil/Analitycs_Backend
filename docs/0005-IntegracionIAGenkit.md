@@ -218,9 +218,29 @@ Se añaden 4 columnas nullable para guardar el veredicto por imagen:
   análisis y el documento, localiza la imagen de cada finding candidato,
   invoca el puerto, agrega el resultado por check y persiste.
 - `infrastructure/ai/genkit-ai-reviewer.adapter.ts`: adaptador que implementa
-  el puerto llamando a los flows de `src/genkit/flows`, convirtiendo la imagen
-  local a data URL (`fileToDataUrl`) justo antes de la llamada — entrada
-  mínima, nunca el HTML completo (principio 2).
+  el puerto llamando a los flows de `src/genkit/flows`, preparando la imagen
+  como entrada mínima (`imageToModelInput`) justo antes de la llamada — nunca el
+  HTML completo (principio 2).
+
+### Origen de la imagen y proveedor (`imageToModelInput`)
+
+Una imagen del documento puede venir de dos orígenes (ver 0002):
+
+- **Imagen pública** (`<img src="https://cdn…">`): se envía al modelo **por URL**;
+  la descarga el proveedor de IA, no nuestro backend. Así el servidor nunca hace
+  peticiones a URLs controladas por el usuario (evita SSRF desde el servidor).
+- **Imagen local** (extraída de un ZIP a `storage/uploads`): se **lee de disco y
+  se embebe en base64**, comprobando antes que la ruta queda contenida en el
+  directorio de almacenamiento (evita path traversal).
+
+> **Requisito del proveedor:** el modelo activo debe (a) ser **multimodal** y
+> (b) saber **descargar URLs públicas**. OpenAI (`gpt-4o-mini`) y xAI cumplen
+> ambas. Ollama exigiría descargar la imagen y mandarla en base64 (y `llava:7b`
+> además no produce salida estructurada fiable: devuelve el propio schema en vez
+> de una instancia), por lo que para este endpoint se recomienda **OpenAI**.
+
+> Las imágenes marcadas `is_accesible = false` (rotas, no encontradas; 0002) no
+> se envían a la IA: se resuelven directamente en `REVISION_PENDIENTE`.
 
 ---
 

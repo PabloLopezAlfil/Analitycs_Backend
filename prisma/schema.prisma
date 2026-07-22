@@ -96,7 +96,7 @@ model AnalysisCheck {
 model AnalysisFinding {
   id               Int           @id @default(autoincrement())
   checkId          Int           @map("check_id")
-  location         String
+  location         String        @db.Text
   evidence         String        @db.Text
   // Veredicto de la validación por IA (docs 0005 §7), NULL hasta revisar.
   aiStatus         String?       @map("ai_status") // VALIDADO_IA | INCUMPLE | REVISION_PENDIENTE
