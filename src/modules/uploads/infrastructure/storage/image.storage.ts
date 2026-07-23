@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 /**
@@ -7,6 +7,8 @@ import { dirname, join } from 'node:path';
  */
 export interface ImageStorage {
   save(uploadFolder: string, relativePath: string, content: Buffer): Promise<string>;
+  /** Borra el fichero guardado en `path` (la `url` de la imagen). No falla si ya no existe. */
+  remove(path: string): Promise<void>;
 }
 
 /**
@@ -21,5 +23,9 @@ export class LocalImageStorage implements ImageStorage {
     await mkdir(dirname(destination), { recursive: true });
     await writeFile(destination, content);
     return destination;
+  }
+
+  async remove(path: string): Promise<void> {
+    await rm(path, { force: true });
   }
 }

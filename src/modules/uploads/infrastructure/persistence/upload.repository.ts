@@ -12,4 +12,5 @@ export interface UploadRepository {
   save(input: CreateUploadInput): Promise<UploadInterface>;
   findAll(): Promise<UploadSummaryInterface[]>;
   findById(id: number): Promise<UploadInterface | null>;
+  delete(id: number): Promise<void>;
 }

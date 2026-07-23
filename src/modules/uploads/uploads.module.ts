@@ -9,6 +9,7 @@ import { ZipUploadParser } from './domain/parsers/zip-upload.parser.js';
 import { CreateUploadUseCase } from './domain/create-upload.use-case.js';
 import { ListUploadsUseCase } from './domain/list-uploads.use-case.js';
 import { GetUploadUseCase } from './domain/get-upload.use-case.js';
+import { DeleteUploadUseCase } from './domain/delete-upload.use-case.js';
 import { UploadsRouter } from './infrastructure/transport/uploads.router.js';
 
 // Carpeta base donde se guardan las imágenes locales extraídas de los ZIP.
@@ -34,6 +35,7 @@ export function buildUploadsRouter(): Router {
   );
   const listUploads = new ListUploadsUseCase(repository);
   const getUpload = new GetUploadUseCase(repository);
+  const deleteUpload = new DeleteUploadUseCase(repository, imageStorage);
 
-  return UploadsRouter({ createUpload, listUploads, getUpload });
+  return UploadsRouter({ createUpload, listUploads, getUpload, deleteUpload });
 }

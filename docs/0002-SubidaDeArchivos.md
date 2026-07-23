@@ -124,6 +124,32 @@ recursos: `uploads`, `html_documents` (`/html`) e `images` (`/images`).
 | `POST` | `/uploads` | Subir un archivo (HTML o ZIP). Detecta el tipo, procesa y persiste. |
 | `GET` | `/uploads` | Listar todas las subidas (resumen, sin las relaciones anidadas). |
 | `GET` | `/uploads/:id` | Obtener el detalle de una subida (con sus `html_documents` e `images`). |
+| `DELETE` | `/uploads/:id` | Eliminar una subida **en cascada** (sus `html_documents`, sus `images` y los ficheros en disco asociados). |
+
+#### Borrado en cascada (`DELETE /uploads/:id`)
+
+Al ser los archivos subidos **inmutables**, la única operación de escritura tras
+la subida es su **eliminación completa**. Borrar una subida debe eliminar **todo
+lo que cuelga de ella**:
+
+1. **Base de datos** — se elimina la fila de `uploads` y, en cascada, todos sus
+   `html_documents` y las `images` de cada uno. La cascada la garantiza el
+   `onDelete: Cascade` definido en las relaciones de Prisma
+   (`uploads` 1—N `html_documents` 1—N `images`), por lo que basta con borrar el
+   `upload` para que se propague al resto.
+2. **Disco** — además de los registros, se borran los **ficheros de las imágenes
+   locales** que se guardaron al procesar la subida (las que tienen `url`
+   apuntando a disco). Las imágenes de **URL pública** no generan fichero, por lo
+   que no hay nada que borrar en disco para ellas. La limpieza en disco se acota
+   siempre a la carpeta de la subida dentro del directorio de almacenamiento.
+
+**Respuestas**:
+
+| Situación | Código |
+|-----------|--------|
+| Borrado correcto | `204 No Content` (sin cuerpo). |
+| La subida no existe (o `:id` no numérico) | `404 Not Found`. |
+| Sin token válido | `401 Unauthorized`. |
 
 ### 6.2 Documentos HTML (`/html`)
 
@@ -152,7 +178,9 @@ recursos de la aplicación.
 > Los archivos subidos son **inmutables** (no se editan tras la subida), por lo
 > que no se contemplan `POST`/`PUT`/`PATCH`/`DELETE` sobre `/html` ni `/images`:
 > se crean y se borran a través de su `upload`. Solo se exponen operaciones de
-> **lectura** (`GET`) sobre estos dos recursos.
+> **lectura** (`GET`) sobre estos dos recursos. El borrado de un `html_document`
+> o de una `image` ocurre **únicamente en cascada** al eliminar su `upload`
+> (`DELETE /uploads/:id`, ver §6.1).
 
 ---
 

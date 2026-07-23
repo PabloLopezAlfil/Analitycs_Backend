@@ -99,4 +99,8 @@ export class PrismaUploadRepository implements UploadRepository {
       })),
     };
   }
+
+  async delete(id: number): Promise<void> {
+    await this.prisma.upload.delete({ where: { id } });
+  }
 }
